@@ -11,17 +11,13 @@ Nolan
 
 ### TO DO ###
 - Make file finding method
-- Get images displayed on screen
-- Get stats recording into file
-- special events
-- rotate images
-- get gifs to play
-- interprate keystrokes
-- UI?
+- rotate images (not necessary)
+- untarring
 
 
 ### KNOWN BUGS ###
-- finished runs variable is not working
+- it only checks past runs not every single event so it might omit some if you try to do this in >1 sessions -- can be fixed by erasing
+some of the text file entries
 
 '''
 import numpy as np
@@ -49,7 +45,8 @@ def main(raw_dir = '', recon_dir=''):
 
     #finished runs we already have stats for
     try:
-        finished_runs = set(np.genfromtxt(stats_file, skip_header = 0, usecols = (1)))
+        finished_runs = set(np.genfromtxt(stats_file, skip_header = 1, usecols = (0), dtype=str))
+
     except:
         finished_runs = set()
 
@@ -83,7 +80,7 @@ def main(raw_dir = '', recon_dir=''):
             
             #this is the case where abub couldnt find a bubble -- it puts 0s
             if data_x[j] == 0 and data_y[j] == 0:
-                write_output(runname, ev[j], cam[j], False)
+                write_output(runname, ev[j], cam[j], False, evtype='cantfind')
                 continue
 
             #now we get the image to show the user
@@ -100,16 +97,31 @@ def main(raw_dir = '', recon_dir=''):
                 
                 #load image, and draw genesis coords circle onto it
                 img = cv2.imread(image_path, cv2.IMREAD_COLOR)
-                cv2.circle(img,(int(data_x[j]), int(data_y[j])), 50, (0,0,255), 2)
+                cv2.circle(img,(int(data_x[j]), int(data_y[j])), 50, (0,0,255), 1)
+
+
+                #printing instructions onto image
+                cv2.putText(
+                    img, #numpy array on which text is written
+                    "q - quit    y - correct    n - incorrect  o - overcount/doublecount  b - boiling    m - cam moved    c - cam glitch", #text
+                    (20,20), #position at which writing has to start
+                    cv2.FONT_HERSHEY_SIMPLEX, #font family
+                    0.5, #font size
+                    (0, 0, 255, 255), #font color
+                    1)
 
                 #show it 
                 cv2.imshow('image', img)
 
                 keypress = cv2.waitKey(1)
                 
+
+                #KEYSTROKE EVENTS
+
                 #quit event
                 if keypress == ord('q'):
                     cv2.destroyAllWindows()
+                    display_results()
                     return
                 
                 #the user decides that a bubble is there
@@ -121,8 +133,27 @@ def main(raw_dir = '', recon_dir=''):
                 if keypress == ord('n'):
                     key_pressed = True
                     write_output(runname, ev[j], cam[j], False)
-                    
+
+                #the user decides that this is counting the same bubble more than once
+                if keypress == ord('o'):
+                    key_pressed = True
+                    write_output(runname, ev[j], cam[j], True, evtype='multi')
                 
+                #the user decides that this is a boiling event
+                if keypress == ord('b'):
+                    key_pressed = True
+                    write_output(runname, ev[j], cam[j], True, evtype='boiling')
+
+                #the user decides that the camera moved
+                if keypress == ord('m'):
+                    key_pressed = True
+                    write_output(runname, ev[j], cam[j], True, evtype='giration')
+
+                #the user decides that the camera malfunctioned -- like a sudden change in a column of pixels or something
+                if keypress == ord('c'):
+                    key_pressed = True
+                    write_output(runname, ev[j], cam[j], True, evtype='glitch')
+
                 #the time waited between frames of the gif
                 time.sleep(.2)
 
@@ -131,15 +162,10 @@ def main(raw_dir = '', recon_dir=''):
                 if k == 4:
                     k = -3
 
-
+    display_results()
                 
 
             
-
-
-
-
-
 def write_output(runname, ev, cam, success, evtype=None):
     # writes results into file
     # success is a bool with success or no success
@@ -154,6 +180,34 @@ def write_output(runname, ev, cam, success, evtype=None):
     #save data to file
     with open(stats_file, 'a') as f:\
         f.write('%s\t%.0d\t%.0d\t%s\t%s\n'%(runname, ev, cam, success, evtype))
+
+def display_results():
+    #prints the results of abub data
+    data = np.genfromtxt(stats_file, skip_header = 1, dtype=str)
+
+    runname = data[:,0]
+    ev = data[:,1]
+    cam = data[:,2]
+    success = data[:,3]
+    evtype = data[:,4]
+
+    N = len(success)
+
+    #success rate (main goal)
+    success_true = len(np.where(success == 'True')[0])
+
+    #other stats like boiling events or camera shakes
+    N_boiling = len(np.where(evtype == 'boiling')[0])
+
+    N_giration = len(np.where(evtype == 'giration')[0])
+
+    N_cam_glitch = len(np.where(evtype == 'glitch')[0])
+
+
+    print('Success rate: %f' % (success_true/N))
+    print('Boiling events per 100: %f' % (100 * N_boiling/N))
+    print('Cam movements per 100: %f' % (100 * N_giration/N))
+    print('Cam glitches per 100: %f' % (100 * N_cam_glitch/N))
 
 
 
